@@ -1,0 +1,54 @@
+{
+  "name": "voxcrm-backend",
+  "version": "1.0.0",
+  "description": "Vapi.ai-style voice AI platform combined with an email marketing CRM",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "nodemon",
+    "build": "npx prisma generate && npx tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "postinstall": "prisma generate",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:push": "prisma db push",
+    "prisma:studio": "prisma studio"
+  },
+  "keywords": [
+    "voice-ai",
+    "vapi",
+    "twilio",
+    "deepgram",
+    "elevenlabs",
+    "email-marketing",
+    "crm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bullmq": "^5.79.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "prisma": "^6.19.3",
+    "ws": "^8.21.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.1.0",
+    "@types/ws": "^8.18.1",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}

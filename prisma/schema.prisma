@@ -1,0 +1,214 @@
+// Prisma schema for VoxCRM — a Vapi.ai-style voice AI platform + email marketing CRM.
+// `prisma generate` runs fully offline; a reachable DATABASE_URL is only required
+// for `prisma migrate` and at runtime.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallStatus {
+  QUEUED
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  NO_ANSWER
+  CANCELED
+}
+
+enum CampaignStatus {
+  DRAFT
+  QUEUED
+  SENDING
+  SENT
+  PAUSED
+  FAILED
+}
+
+enum RecipientStatus {
+  PENDING
+  SENT
+  DELIVERED
+  OPENED
+  BOUNCED
+  FAILED
+}
+
+// ─────────────────────────────────────────────────────────────
+// Models
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  agents    Agent[]
+  calls     Call[]
+  campaigns EmailCampaign[]
+  leads     Lead[]
+
+  @@map("users")
+}
+
+/// An AI voice agent: prompt + provider configuration used by the VoiceOrchestrator.
+model Agent {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  systemPrompt String
+  firstMessage String   @default("Hello! How can I help you today?")
+
+  // Provider configuration
+  sttProvider String  @default("deepgram")
+  llmProvider String  @default("anthropic")
+  llmModel    String  @default("claude-opus-4-8")
+  ttsProvider String  @default("elevenlabs")
+  voiceId     String  @default("21m00Tcm4TlvDq8ikWAM")
+  temperature Float   @default(0.7)
+  maxTokens   Int     @default(1024)
+
+  // Free-form provider overrides (api params, tools, etc.)
+  config Json @default("{}")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calls  Call[]
+
+  @@index([userId])
+  @@map("agents")
+}
+
+/// A single phone call handled by an agent, including transcript + AI summary.
+model Call {
+  id            String        @id @default(cuid())
+  direction     CallDirection @default(INBOUND)
+  status        CallStatus    @default(QUEUED)
+  fromNumber    String?
+  toNumber      String?
+  twilioCallSid String?       @unique
+  streamSid     String?
+
+  // Populated as the call progresses.
+  durationSec  Int?
+  recordingUrl String?
+
+  // Ordered array of { role, text, at } turns produced by the pipeline.
+  transcript Json @default("[]")
+
+  // AI-generated post-call summary (filled by the post-call worker).
+  summary        String?
+  summaryEmailed Boolean @default(false)
+
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  agentId String?
+  agent   Agent?  @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@map("calls")
+}
+
+/// A CRM contact — the recipient of emails and the subject/target of calls.
+model Lead {
+  id        String   @id @default(cuid())
+  email     String
+  name      String?
+  phone     String?
+  company   String?
+  tags      String[] @default([])
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  calls      Call[]
+  recipients CampaignRecipient[]
+
+  @@unique([userId, email])
+  @@index([userId])
+  @@map("leads")
+}
+
+/// A bulk / transactional email marketing campaign.
+model EmailCampaign {
+  id          String         @id @default(cuid())
+  name        String
+  subject     String
+  fromEmail   String
+  html        String
+  text        String?
+  status      CampaignStatus @default(DRAFT)
+  scheduledAt DateTime?
+
+  totalRecipients Int @default(0)
+  sentCount       Int @default(0)
+  failedCount     Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  recipients CampaignRecipient[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("email_campaigns")
+}
+
+/// Join model tracking per-recipient delivery state for a campaign.
+model CampaignRecipient {
+  id      String          @id @default(cuid())
+  email   String
+  status  RecipientStatus @default(PENDING)
+  error   String?
+  sentAt  DateTime?
+  createdAt DateTime      @default(now())
+
+  campaignId String
+  campaign   EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, email])
+  @@index([campaignId])
+  @@index([status])
+  @@map("campaign_recipients")
+}

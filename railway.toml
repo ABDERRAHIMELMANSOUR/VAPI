@@ -1,0 +1,36 @@
+# Railway deployment configuration (config-as-code).
+# Docs: https://docs.railway.com/guides/config-as-code
+#
+# Notes:
+# - Railpack (Railway's default builder) auto-detects Node, installs ALL
+#   dependencies (including dev) for the build, runs `buildCommand`, then
+#   prunes devDependencies from the runtime image. That is why `prisma` and
+#   `@prisma/client` live in "dependencies" — the pre-deploy command below
+#   needs the Prisma CLI at deploy time, after pruning.
+# - The app reads PORT from the environment (Railway injects it dynamically).
+
+[build]
+builder = "RAILPACK"
+buildCommand = "npm run build"
+watchPatterns = [
+  "src/**",
+  "prisma/**",
+  "package.json",
+  "package-lock.json",
+  "tsconfig.json",
+  "railway.toml"
+]
+
+[deploy]
+startCommand = "npm run start"
+# Sync the Prisma schema to the Railway PostgreSQL instance before each deploy
+# goes live. `db push` creates/updates tables directly from schema.prisma —
+# ideal while there is no prisma/migrations history yet. Once you adopt real
+# migrations, switch this to: ["npx prisma migrate deploy"]
+preDeployCommand = ["npx prisma db push --skip-generate"]
+# /api/health returns 200 without requiring the DB, so deploys don't flap
+# while the database connection warms up.
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
