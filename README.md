@@ -1,10 +1,15 @@
-# VoxCRM Backend
+# VoxCRM
 
-A production-oriented TypeScript backend combining a **Vapi.ai-style voice AI
-platform** (Twilio Media Streams → STT → LLM → TTS) with an **email marketing
-CRM**. Clean layered architecture, Zod-validated inputs, JWT auth, centralized
-error handling, and a queue that transparently uses **BullMQ when Redis is
-configured** or an **in-process async queue** otherwise.
+Monorepo for the VoxCRM platform:
+
+- **`/` (this level)** — the backend: a production-oriented TypeScript API
+  combining a **Vapi.ai-style voice AI platform** (Twilio Media Streams → STT →
+  LLM → TTS) with an **email marketing CRM**. Clean layered architecture,
+  Zod-validated inputs, JWT auth, centralized error handling, and a queue that
+  transparently uses **BullMQ when Redis is configured** or an **in-process
+  async queue** otherwise.
+- **[`/vapi-frontend`](vapi-frontend/README.md)** — the Next.js 15 dashboard
+  (auth, agents CRUD, call history with transcripts and AI summaries).
 
 Every third-party integration degrades gracefully to a deterministic local stub
 when its API key is absent, so the server boots and the full request + voice
@@ -94,9 +99,11 @@ All `/api/*` routes except `/api/health` and `/api/auth/*` require
 
 The repo ships with [railway.toml](railway.toml) for zero-config deployment:
 
-1. Push this folder to a GitHub repo (or run `railway up` from it). If `vapi/`
-   is a subfolder of the repo, set the service **Root Directory** to `/vapi`
-   in Railway → service → Settings.
+1. Push this repo to GitHub (or run `railway up` from this directory). The
+   backend lives at the repo root, so no Root Directory override is needed.
+   To host the dashboard on Railway too, add a second service from the same
+   repo with **Root Directory** set to `/vapi-frontend` and a
+   `BACKEND_API_URL` variable pointing at the backend service's public URL.
 2. In the Railway project, add a **PostgreSQL** database service.
 3. On the app service, set variables:
    - `DATABASE_URL` → `${{Postgres.DATABASE_URL}}` (reference the DB service)
