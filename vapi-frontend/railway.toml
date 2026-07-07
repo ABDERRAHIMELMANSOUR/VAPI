@@ -1,18 +1,17 @@
 # Railway config for the FRONTEND service.
-# Service settings: Root Directory = /vapi-frontend (this file is resolved
-# relative to that root). The repo-root railway.toml belongs to the backend
-# service only — its watchPatterns and /api/health healthcheck do not apply
-# to this Next.js app.
+# Service settings: Root Directory = vapi-frontend (this file and the
+# Dockerfile are resolved relative to that root). The repo-root railway.toml
+# belongs to the backend service only.
 #
-# Deliberately no watchPatterns here: the frontend redeploys on every push,
-# so a deployment can never be skipped with "watched paths not modified".
+# Build/start are owned by the Dockerfile — fully deterministic, no builder
+# auto-detection. Deliberately no watchPatterns: the frontend redeploys on
+# every push and can never be skipped with "watched paths not modified".
 
 [build]
-builder = "RAILPACK"
-buildCommand = "npm run build"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npm run start"
 # /login renders 200 for anonymous requests (the root path 307-redirects).
 healthcheckPath = "/login"
 healthcheckTimeout = 300
