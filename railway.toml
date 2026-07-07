@@ -1,5 +1,10 @@
-# Railway deployment configuration (config-as-code).
+# Railway deployment configuration for the BACKEND service (repo root).
+# The frontend service has its own config at vapi-frontend/railway.toml.
 # Docs: https://docs.railway.com/guides/config-as-code
+#
+# NOTE: watchPatterns below are repo-root-anchored and cover backend paths
+# only — commits touching just vapi-frontend/ will (intentionally) NOT
+# trigger a backend redeploy.
 #
 # Notes:
 # - Railpack (Railway's default builder) auto-detects Node, installs ALL
