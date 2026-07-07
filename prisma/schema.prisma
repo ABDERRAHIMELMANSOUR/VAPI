@@ -48,6 +48,11 @@ enum RecipientStatus {
   FAILED
 }
 
+enum PhoneNumberStatus {
+  ACTIVE
+  INACTIVE
+}
+
 // ─────────────────────────────────────────────────────────────
 // Models
 // ─────────────────────────────────────────────────────────────
@@ -60,30 +65,33 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  agents    Agent[]
-  calls     Call[]
-  campaigns EmailCampaign[]
-  leads     Lead[]
+  agents         Agent[]
+  calls          Call[]
+  campaigns      EmailCampaign[]
+  leads          Lead[]
+  phoneNumbers   PhoneNumber[]
+  voiceCampaigns VoiceCampaign[]
+  emailTemplates EmailTemplate[]
 
   @@map("users")
 }
 
 /// An AI voice agent: prompt + provider configuration used by the VoiceOrchestrator.
 model Agent {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   name         String
   description  String?
   systemPrompt String
-  firstMessage String   @default("Hello! How can I help you today?")
+  firstMessage String  @default("Hello! How can I help you today?")
 
   // Provider configuration
-  sttProvider String  @default("deepgram")
-  llmProvider String  @default("anthropic")
-  llmModel    String  @default("claude-opus-4-8")
-  ttsProvider String  @default("elevenlabs")
-  voiceId     String  @default("21m00Tcm4TlvDq8ikWAM")
-  temperature Float   @default(0.7)
-  maxTokens   Int     @default(1024)
+  sttProvider String @default("deepgram")
+  llmProvider String @default("anthropic")
+  llmModel    String @default("claude-opus-4-8")
+  ttsProvider String @default("elevenlabs")
+  voiceId     String @default("21m00Tcm4TlvDq8ikWAM")
+  temperature Float  @default(0.7)
+  maxTokens   Int    @default(1024)
 
   // Free-form provider overrides (api params, tools, etc.)
   config Json @default("{}")
@@ -92,9 +100,11 @@ model Agent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  calls  Call[]
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calls          Call[]
+  phoneNumbers   PhoneNumber[]
+  voiceCampaigns VoiceCampaign[]
 
   @@index([userId])
   @@map("agents")
@@ -121,6 +131,12 @@ model Call {
   summary        String?
   summaryEmailed Boolean @default(false)
 
+  // Structured post-call analysis: { sentiment, topics[], successEvaluation,
+  // keyPoints[], actionItems[] }. Produced by the post-call worker.
+  analysis    Json    @default("{}")
+  endedReason String?
+  cost        Float?
+
   startedAt DateTime?
   endedAt   DateTime?
   createdAt DateTime  @default(now())
@@ -135,9 +151,13 @@ model Call {
   leadId String?
   lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
+  campaignId String?
+  campaign   VoiceCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
   @@index([userId])
   @@index([agentId])
   @@index([status])
+  @@index([campaignId])
   @@map("calls")
 }
 
@@ -194,12 +214,12 @@ model EmailCampaign {
 
 /// Join model tracking per-recipient delivery state for a campaign.
 model CampaignRecipient {
-  id      String          @id @default(cuid())
-  email   String
-  status  RecipientStatus @default(PENDING)
-  error   String?
-  sentAt  DateTime?
-  createdAt DateTime      @default(now())
+  id        String          @id @default(cuid())
+  email     String
+  status    RecipientStatus @default(PENDING)
+  error     String?
+  sentAt    DateTime?
+  createdAt DateTime        @default(now())
 
   campaignId String
   campaign   EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -211,4 +231,106 @@ model CampaignRecipient {
   @@index([campaignId])
   @@index([status])
   @@map("campaign_recipients")
+}
+
+/// A reusable email template (subject + HTML body) for email campaigns.
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  subject   String
+  html      String
+  text      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_templates")
+}
+
+/// A Twilio phone number imported into the platform and optionally bound to an
+/// agent that answers inbound calls to it.
+model PhoneNumber {
+  id           String            @id @default(cuid())
+  number       String // E.164, e.g. +14155552671
+  friendlyName String?
+  provider     String            @default("twilio")
+  status       PhoneNumberStatus @default(ACTIVE)
+
+  // Twilio binding. The auth token is sensitive and is never returned by the
+  // API layer (controllers select it out explicitly).
+  twilioSid        String?
+  twilioAccountSid String?
+  twilioAuthToken  String?
+  capabilities     Json    @default("{}") // { voice: bool, sms: bool }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Inbound agent binding: calls to this number are answered by this agent.
+  agentId String?
+  agent   Agent?  @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  voiceCampaigns VoiceCampaign[]
+
+  @@unique([userId, number])
+  @@index([userId])
+  @@map("phone_numbers")
+}
+
+/// An automated outbound calling campaign: an agent dials a list of leads from
+/// a chosen caller-ID number.
+model VoiceCampaign {
+  id     String         @id @default(cuid())
+  name   String
+  status CampaignStatus @default(DRAFT)
+
+  totalLeads     Int @default(0)
+  completedCalls Int @default(0)
+  failedCalls    Int @default(0)
+
+  scheduledAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  agentId String
+  agent   Agent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  // Caller-ID number to dial from.
+  phoneNumberId String?
+  phoneNumber   PhoneNumber? @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+
+  leads VoiceCampaignLead[]
+  calls Call[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("voice_campaigns")
+}
+
+/// A single lead within an outbound voice campaign.
+model VoiceCampaignLead {
+  id        String     @id @default(cuid())
+  phone     String
+  name      String?
+  metadata  Json       @default("{}")
+  status    CallStatus @default(QUEUED)
+  callId    String?
+  error     String?
+  createdAt DateTime   @default(now())
+
+  campaignId String
+  campaign   VoiceCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([status])
+  @@map("voice_campaign_leads")
 }

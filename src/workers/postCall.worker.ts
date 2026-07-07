@@ -1,9 +1,20 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { createQueue } from '../queue/Queue';
 import { llmService } from '../services/LLMService';
 import { emailService } from '../services/EmailService';
 import { createLogger } from '../utils/logger';
 import type { TranscriptTurn } from '../types';
+
+/** Structured analysis surfaced on the call deep-dive page. */
+export interface CallAnalysis {
+  sentiment: 'positive' | 'neutral' | 'negative';
+  successEvaluation: 'success' | 'partial' | 'unresolved';
+  topics: string[];
+  keyPoints: string[];
+  actionItems: string[];
+  turnCount: number;
+}
 
 const log = createLogger('postCallWorker');
 
@@ -56,12 +67,15 @@ export function registerPostCallWorker(): void {
       call.agent ? `${call.agent.name}: ${call.agent.description ?? ''}` : undefined,
     );
 
-    // 3. Persist it.
+    // Structured analysis for the call deep-dive (sentiment, topics, etc.).
+    const analysis = buildAnalysis(transcript, summary);
+
+    // 3. Persist summary + analysis.
     await prisma.call.update({
       where: { id: call.id },
-      data: { summary },
+      data: { summary, analysis: analysis as unknown as Prisma.InputJsonValue },
     });
-    log.info('Call summary generated', { callId });
+    log.info('Call summary + analysis generated', { callId });
 
     // 4. Email it to the best available recipient.
     const recipient = call.lead?.email ?? call.user.email;
@@ -98,6 +112,63 @@ function normalizeTranscript(value: unknown): TranscriptTurn[] {
     (t): t is TranscriptTurn =>
       Boolean(t) && typeof (t as TranscriptTurn).text === 'string',
   );
+}
+
+/**
+ * Derive a structured analysis from the transcript. Heuristic and deterministic
+ * (no extra LLM round-trip) so the deep-dive always has content, including
+ * offline. The summary text is folded into sentiment/success signals.
+ */
+function buildAnalysis(transcript: TranscriptTurn[], summary: string): CallAnalysis {
+  const dialogue = transcript.filter((t) => t.role !== 'system');
+  const haystack = `${dialogue.map((t) => t.text).join(' ')} ${summary}`.toLowerCase();
+
+  const positive = /(thank|great|perfect|sounds good|interested|yes|happy|resolved|appreciate)/;
+  const negative = /(no|not interested|cancel|angry|frustrat|problem|complain|refund|wrong|unhappy)/;
+  const sentiment: CallAnalysis['sentiment'] = positive.test(haystack)
+    ? 'positive'
+    : negative.test(haystack)
+      ? 'negative'
+      : 'neutral';
+
+  const success: CallAnalysis['successEvaluation'] = /(resolved|scheduled|booked|confirmed|completed|agreed|purchase)/.test(
+    haystack,
+  )
+    ? 'success'
+    : dialogue.length <= 2
+      ? 'unresolved'
+      : 'partial';
+
+  // Topic keywords worth surfacing when present.
+  const topicMap: Array<[RegExp, string]> = [
+    [/pric|cost|quote|budget/, 'Pricing'],
+    [/support|help|issue|problem/, 'Support'],
+    [/schedul|book|appointment|meeting|demo/, 'Scheduling'],
+    [/order|purchase|buy|subscription/, 'Sales'],
+    [/refund|cancel|billing|invoice/, 'Billing'],
+    [/feature|product|service/, 'Product'],
+  ];
+  const topics = topicMap.filter(([re]) => re.test(haystack)).map(([, label]) => label);
+
+  const keyPoints = dialogue
+    .filter((t) => t.role === 'user')
+    .map((t) => t.text.trim())
+    .filter((t) => t.length > 0)
+    .slice(0, 4);
+
+  const actionItems: string[] = [];
+  if (/(call back|follow up|follow-up|reach out)/.test(haystack)) actionItems.push('Follow up with the caller');
+  if (/(email|send|share)/.test(haystack)) actionItems.push('Send requested information by email');
+  if (/(schedul|book|appointment|demo)/.test(haystack)) actionItems.push('Confirm the scheduled appointment');
+
+  return {
+    sentiment,
+    successEvaluation: success,
+    topics: topics.length > 0 ? topics : ['General'],
+    keyPoints,
+    actionItems,
+    turnCount: dialogue.length,
+  };
 }
 
 function renderSummaryEmail(data: {

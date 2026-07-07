@@ -4,6 +4,9 @@ import { authRouter } from './auth.routes';
 import { agentRouter } from './agent.routes';
 import { callRouter } from './call.routes';
 import { campaignRouter } from './campaign.routes';
+import { phoneNumberRouter } from './phoneNumber.routes';
+import { voiceCampaignRouter } from './voiceCampaign.routes';
+import { emailTemplateRouter } from './emailTemplate.routes';
 import { voiceRouter } from './voice.routes';
 
 export const apiRouter = Router();
@@ -28,5 +31,8 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/agents', agentRouter);
 apiRouter.use('/calls', callRouter);
 apiRouter.use('/campaigns', campaignRouter);
+apiRouter.use('/phone-numbers', phoneNumberRouter);
+apiRouter.use('/voice-campaigns', voiceCampaignRouter);
+apiRouter.use('/email-templates', emailTemplateRouter);
 
 export { voiceRouter };

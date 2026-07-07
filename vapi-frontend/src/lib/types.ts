@@ -60,6 +60,15 @@ export interface TranscriptTurn {
   at?: string;
 }
 
+export interface CallAnalysis {
+  sentiment?: 'positive' | 'neutral' | 'negative';
+  successEvaluation?: 'success' | 'partial' | 'unresolved';
+  topics?: string[];
+  keyPoints?: string[];
+  actionItems?: string[];
+  turnCount?: number;
+}
+
 export interface Call {
   id: string;
   direction: CallDirection;
@@ -72,6 +81,9 @@ export interface Call {
   transcript: TranscriptTurn[];
   summary: string | null;
   summaryEmailed: boolean;
+  analysis: CallAnalysis | null;
+  endedReason: string | null;
+  cost: number | null;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
@@ -79,6 +91,122 @@ export interface Call {
   agentId: string | null;
   agent?: { id: string; name: string } | null;
   leadId: string | null;
+  campaignId: string | null;
+}
+
+export type PhoneNumberStatus = 'ACTIVE' | 'INACTIVE';
+
+export interface PhoneNumber {
+  id: string;
+  number: string;
+  friendlyName: string | null;
+  provider: string;
+  status: PhoneNumberStatus;
+  twilioSid: string | null;
+  twilioAccountSid: string | null;
+  capabilities: { voice?: boolean; sms?: boolean };
+  agentId: string | null;
+  agent?: { id: string; name: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ImportPhoneNumberInput {
+  number: string;
+  twilioAccountSid: string;
+  twilioAuthToken: string;
+  friendlyName?: string;
+  agentId?: string;
+}
+
+export type CampaignStatus = 'DRAFT' | 'QUEUED' | 'SENDING' | 'SENT' | 'PAUSED' | 'FAILED';
+
+export interface VoiceCampaignLead {
+  id: string;
+  phone: string;
+  name: string | null;
+  status: CallStatus;
+  callId: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface VoiceCampaign {
+  id: string;
+  name: string;
+  status: CampaignStatus;
+  totalLeads: number;
+  completedCalls: number;
+  failedCalls: number;
+  scheduledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  agentId: string;
+  agent?: { id: string; name: string } | null;
+  phoneNumberId: string | null;
+  phoneNumber?: { id: string; number: string } | null;
+  leads?: VoiceCampaignLead[];
+}
+
+export interface VoiceCampaignInput {
+  name: string;
+  agentId: string;
+  phoneNumberId?: string;
+  leads: Array<{ phone: string; name?: string }>;
+}
+
+export interface EmailCampaign {
+  id: string;
+  name: string;
+  subject: string;
+  fromEmail: string;
+  html: string;
+  text: string | null;
+  status: CampaignStatus;
+  scheduledAt: string | null;
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmailCampaignInput {
+  name: string;
+  subject: string;
+  fromEmail?: string;
+  html: string;
+  text?: string;
+  recipients: Array<{ email: string; leadId?: string }>;
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  html: string;
+  text: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmailTemplateInput {
+  name: string;
+  subject: string;
+  html: string;
+  text?: string;
+}
+
+export interface CampaignStatusReport {
+  id: string;
+  status: CampaignStatus;
+  breakdown: Record<string, number>;
+  totalRecipients?: number;
+  sentCount?: number;
+  failedCount?: number;
+  totalLeads?: number;
+  completedCalls?: number;
+  failedCalls?: number;
 }
 
 export interface Paginated<T> {

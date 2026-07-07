@@ -5,6 +5,7 @@ import { connectDatabase, disconnectDatabase } from './config/prisma';
 import { voiceOrchestrator } from './services/VoiceOrchestrator';
 import { registerPostCallWorker } from './workers/postCall.worker';
 import { registerCampaignWorker } from './workers/campaign.worker';
+import { registerOutboundCampaignWorker } from './workers/outboundCampaign.worker';
 import { closeAllQueues } from './queue/Queue';
 import { createLogger } from './utils/logger';
 
@@ -36,9 +37,10 @@ export async function startServer(): Promise<Server> {
   // Attach the Twilio Media Streams WebSocket server to the same HTTP server.
   voiceOrchestrator.attach(server);
 
-  // Register background workers (post-call summary + campaign delivery).
+  // Register background workers (post-call summary, email + voice campaigns).
   registerPostCallWorker();
   registerCampaignWorker();
+  registerOutboundCampaignWorker();
 
   await new Promise<void>((resolve) => {
     server.listen(env.PORT, () => {

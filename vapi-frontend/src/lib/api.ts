@@ -6,8 +6,17 @@ import type {
   ApiErrorBody,
   Call,
   CallStatus,
+  CampaignStatusReport,
+  EmailCampaign,
+  EmailCampaignInput,
+  EmailTemplate,
+  EmailTemplateInput,
+  ImportPhoneNumberInput,
   Paginated,
+  PhoneNumber,
   User,
+  VoiceCampaign,
+  VoiceCampaignInput,
 } from './types';
 
 /**
@@ -117,5 +126,52 @@ export const api = {
         },
       }),
     get: (id: string) => request<{ call: Call }>(`calls/${id}`),
+  },
+
+  phoneNumbers: {
+    list: (page = 1, limit = 50) =>
+      request<Paginated<PhoneNumber>>('phone-numbers', { query: { page, limit } }),
+    import: (input: ImportPhoneNumberInput) =>
+      request<{ phoneNumber: PhoneNumber; verified: boolean }>('phone-numbers/import', {
+        method: 'POST',
+        body: input,
+      }),
+    update: (
+      id: string,
+      input: Partial<{ friendlyName: string | null; agentId: string | null; status: string }>,
+    ) => request<{ phoneNumber: PhoneNumber }>(`phone-numbers/${id}`, { method: 'PUT', body: input }),
+    remove: (id: string) => request<void>(`phone-numbers/${id}`, { method: 'DELETE' }),
+  },
+
+  voiceCampaigns: {
+    list: (page = 1, limit = 50) =>
+      request<Paginated<VoiceCampaign>>('voice-campaigns', { query: { page, limit } }),
+    get: (id: string) => request<{ campaign: VoiceCampaign }>(`voice-campaigns/${id}`),
+    create: (input: VoiceCampaignInput) =>
+      request<{ campaign: VoiceCampaign }>('voice-campaigns', { method: 'POST', body: input }),
+    launch: (id: string) =>
+      request<{ campaign: VoiceCampaign }>(`voice-campaigns/${id}/launch`, { method: 'POST' }),
+    status: (id: string) =>
+      request<CampaignStatusReport>(`voice-campaigns/${id}/status`),
+    remove: (id: string) => request<void>(`voice-campaigns/${id}`, { method: 'DELETE' }),
+  },
+
+  emailCampaigns: {
+    list: (page = 1, limit = 50) =>
+      request<Paginated<EmailCampaign>>('campaigns', { query: { page, limit } }),
+    get: (id: string) => request<{ campaign: EmailCampaign }>(`campaigns/${id}`),
+    create: (input: EmailCampaignInput) =>
+      request<{ campaign: EmailCampaign }>('campaigns', { method: 'POST', body: input }),
+    queue: (id: string) =>
+      request<{ campaign: EmailCampaign }>(`campaigns/${id}/queue`, { method: 'POST' }),
+    status: (id: string) => request<CampaignStatusReport>(`campaigns/${id}/status`),
+    remove: (id: string) => request<void>(`campaigns/${id}`, { method: 'DELETE' }),
+  },
+
+  emailTemplates: {
+    list: () => request<{ items: EmailTemplate[]; total: number }>('email-templates'),
+    create: (input: EmailTemplateInput) =>
+      request<{ template: EmailTemplate }>('email-templates', { method: 'POST', body: input }),
+    remove: (id: string) => request<void>(`email-templates/${id}`, { method: 'DELETE' }),
   },
 };

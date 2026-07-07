@@ -18,7 +18,10 @@ import { initialsOf } from '@/lib/format';
 
 const PAGE_TITLES: Array<{ prefix: string; title: string }> = [
   { prefix: '/dashboard/agents', title: 'Agents' },
+  { prefix: '/dashboard/phone-numbers', title: 'Phone Numbers' },
+  { prefix: '/dashboard/outbound', title: 'Outbound Campaigns' },
   { prefix: '/dashboard/calls', title: 'Calls' },
+  { prefix: '/dashboard/email', title: 'Email Campaigns' },
   { prefix: '/dashboard', title: 'Overview' },
 ];
 
