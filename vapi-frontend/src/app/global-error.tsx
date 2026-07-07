@@ -2,8 +2,8 @@
 
 /**
  * Root error boundary. This replaces the ENTIRE root layout when it triggers,
- * so per Next.js App Router requirements it must render its own <html> and
- * <body> — standard lowercase native tags, never next/document's <Html>.
+ * so per Next.js App Router requirements it must render its own lowercase
+ * html and body elements.
  *
  * It is also styled inline on purpose: when the root layout has crashed we
  * cannot rely on globals.css or font variables being present.
