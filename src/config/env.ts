@@ -45,14 +45,21 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
 
-  // Email
-  EMAIL_PROVIDER: z.enum(['resend', 'smtp', 'console']).default('console'),
+  // Email.
+  // EMAIL_PROVIDER = "auto" (default) picks SMTP when SMTP_* creds are present,
+  // else Resend when RESEND_API_KEY is set, else the console driver. Set it
+  // explicitly to force a specific driver.
+  EMAIL_PROVIDER: z.enum(['auto', 'resend', 'smtp', 'console']).default('auto'),
   EMAIL_FROM: z.string().default('no-reply@voxcrm.dev'),
   RESEND_API_KEY: z.string().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: z.string().optional(),
+  // Preferred name is SMTP_PASSWORD; SMTP_PASS is accepted as a legacy alias.
+  SMTP_PASSWORD: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+  // Preferred sender for SMTP; falls back to EMAIL_FROM when unset.
+  SMTP_FROM: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

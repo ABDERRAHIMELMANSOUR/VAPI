@@ -7,15 +7,23 @@ import type { EmailMessage, EmailSendResult } from '../types';
 const log = createLogger('EmailService');
 
 /**
- * Transactional + bulk email delivery. Supports three drivers selected via
- * EMAIL_PROVIDER:
- *   - "resend": Resend HTTP API
- *   - "smtp":   raw SMTP (STARTTLS/implicit TLS), no external dependency
- *   - "console": logs the message (default when unconfigured)
+ * Transactional + bulk email delivery. The active driver is resolved at send
+ * time from the environment (see providers.email.effectiveProvider):
+ *   - "smtp":    raw SMTP (STARTTLS/implicit TLS), no external dependency.
+ *                Auto-selected when SMTP_HOST/SMTP_USER/SMTP_PASSWORD are set.
+ *   - "resend":  Resend HTTP API (when RESEND_API_KEY is set).
+ *   - "console": logs the message (fallback when nothing is configured).
  */
 export class EmailService {
-  private readonly provider = providers.email.provider;
-  private readonly defaultFrom = providers.email.from;
+  /** Resolved per send so runtime env changes and tests are respected. */
+  private get provider(): 'resend' | 'smtp' | 'console' {
+    return providers.email.effectiveProvider;
+  }
+
+  private get defaultFrom(): string {
+    // SMTP uses its own sender (SMTP_FROM) when present.
+    return this.provider === 'smtp' ? providers.email.smtp.from : providers.email.from;
+  }
 
   async send(message: EmailMessage): Promise<EmailSendResult> {
     const from = message.from ?? this.defaultFrom;
@@ -96,14 +104,22 @@ export class EmailService {
   private async sendViaSmtp(message: EmailMessage): Promise<EmailSendResult> {
     const { host, port, user, pass } = providers.email.smtp;
     if (!host) {
-      log.warn('EMAIL_PROVIDER=smtp but SMTP_HOST is missing; using console fallback');
+      log.warn('SMTP selected but SMTP_HOST is missing; using console fallback');
       return this.sendViaConsole(message);
     }
 
-    const client = new SmtpClient({ host, port, user, pass });
-    const id = await client.sendMail(message);
-    log.info('Email sent via SMTP', { to: message.to, id });
-    return { id, provider: 'smtp', accepted: true };
+    try {
+      const client = new SmtpClient({ host, port, user, pass });
+      const id = await client.sendMail(message);
+      log.info('Email sent via SMTP', { to: message.to, host, id });
+      return { id, provider: 'smtp', accepted: true };
+    } catch (err) {
+      // Surface the failure (do NOT silently fall back to console) so delivery
+      // problems are visible to the caller and recorded per-recipient.
+      const detail = err instanceof Error ? err.message : String(err);
+      log.error('SMTP send failed', { to: message.to, host, error: detail });
+      throw new Error(`SMTP delivery failed via ${host}: ${detail}`);
+    }
   }
 
   // ── Console (offline default) ───────────────────────────────────────────────
@@ -139,6 +155,8 @@ class SmtpClient {
 
     const io = new SmtpIO(socket);
     try {
+      // The greeting read below also surfaces connection errors (ECONNREFUSED,
+      // DNS failures, TLS handshake errors) as a rejected promise.
       await io.expect(220);
       await io.command(`EHLO ${hostname()}`, 250);
 
@@ -171,10 +189,17 @@ class SmtpClient {
   }
 }
 
+interface PendingRead {
+  resolve: (line: string) => void;
+  reject: (err: Error) => void;
+}
+
 /** Promise-based line reader/writer for an SMTP socket. */
 class SmtpIO {
   private buffer = '';
-  private resolvers: Array<(line: string) => void> = [];
+  private pending: PendingRead[] = [];
+  /** Set once the socket errors/closes so later reads fail fast. */
+  private fatal: Error | null = null;
 
   constructor(private socket: Socket) {
     this.attach();
@@ -183,7 +208,15 @@ class SmtpIO {
   rebind(socket: Socket): void {
     this.socket = socket;
     this.buffer = '';
+    this.fatal = null;
     this.attach();
+  }
+
+  private fail(err: Error): void {
+    if (!this.fatal) this.fatal = err;
+    const waiters = this.pending;
+    this.pending = [];
+    for (const p of waiters) p.reject(err);
   }
 
   private attach(): void {
@@ -196,19 +229,34 @@ class SmtpIO {
         this.buffer = this.buffer.slice(idx + 1);
         // Multi-line replies use "250-" for continuation and "250 " for the last.
         if (/^\d{3} /.test(line.trimStart()) || line.length > 0) {
-          const resolver = this.resolvers.shift();
-          if (resolver) resolver(line.trim());
+          const waiter = this.pending.shift();
+          if (waiter) waiter.resolve(line.trim());
         }
       }
     });
+    // Without these handlers a connection error would be an uncaught exception
+    // and crash the process; instead we reject the in-flight read.
+    this.socket.on('error', (err: Error) => this.fail(err));
+    this.socket.on('close', () => this.fail(new Error('SMTP connection closed unexpectedly')));
   }
 
   private readLine(): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('SMTP read timeout')), 15000);
-      this.resolvers.push((line) => {
+    if (this.fatal) return Promise.reject(this.fatal);
+    return new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending = this.pending.filter((p) => p.resolve !== wrapped);
+        reject(new Error('SMTP read timeout'));
+      }, 15000);
+      const wrapped = (line: string) => {
         clearTimeout(timeout);
         resolve(line);
+      };
+      this.pending.push({
+        resolve: wrapped,
+        reject: (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
       });
     });
   }

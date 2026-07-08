@@ -21,7 +21,7 @@ apiRouter.get('/health', (_req, res) => {
       deepgram: providers.deepgram.configured,
       elevenlabs: providers.elevenlabs.configured,
       llm: providers.llm.configured,
-      email: providers.email.provider,
+      email: providers.email.effectiveProvider,
       queue: providers.queue.useRedis ? 'bullmq' : 'memory',
     },
   });

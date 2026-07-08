@@ -60,17 +60,49 @@ export const providers = {
   },
 
   email: {
-    provider: env.EMAIL_PROVIDER,
-    from: env.EMAIL_FROM,
+    // Explicit driver preference; "auto" resolves via `effectiveProvider`.
+    preference: env.EMAIL_PROVIDER,
+    from: env.SMTP_FROM ?? env.EMAIL_FROM,
     resend: {
       apiKey: env.RESEND_API_KEY,
       baseUrl: 'https://api.resend.com',
+      get configured(): boolean {
+        return Boolean(env.RESEND_API_KEY);
+      },
     },
     smtp: {
       host: env.SMTP_HOST,
       port: env.SMTP_PORT,
       user: env.SMTP_USER,
-      pass: env.SMTP_PASS,
+      // Prefer SMTP_PASSWORD; accept the legacy SMTP_PASS alias.
+      pass: env.SMTP_PASSWORD ?? env.SMTP_PASS,
+      from: env.SMTP_FROM ?? env.EMAIL_FROM,
+      // Auth trio required to submit mail; port/from have sensible defaults.
+      get configured(): boolean {
+        return Boolean(env.SMTP_HOST && env.SMTP_USER && (env.SMTP_PASSWORD ?? env.SMTP_PASS));
+      },
+    },
+    /**
+     * The driver actually used at send time. Explicit EMAIL_PROVIDER wins;
+     * otherwise ("auto") SMTP is chosen when its credentials are present, then
+     * Resend when its key is set, then the console fallback.
+     */
+    get effectiveProvider(): 'resend' | 'smtp' | 'console' {
+      switch (env.EMAIL_PROVIDER) {
+        case 'console':
+          return 'console';
+        case 'resend':
+          return env.RESEND_API_KEY ? 'resend' : 'console';
+        case 'smtp':
+          return 'smtp';
+        case 'auto':
+        default:
+          if (env.SMTP_HOST && env.SMTP_USER && (env.SMTP_PASSWORD ?? env.SMTP_PASS)) {
+            return 'smtp';
+          }
+          if (env.RESEND_API_KEY) return 'resend';
+          return 'console';
+      }
     },
   },
 
